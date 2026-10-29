@@ -153,6 +153,13 @@ export class ChunkUploader {
         } catch (error) {
             console.error('ChunkUpload Fehler:', error);
             this.uppy.emit('upload-error', this.uppy.getFile(fileID), error);
+            // Fehlermeldung zusaetzlich als Info-Bubble zeigen: upload-error allein erzeugt im
+            // Dashboard nicht immer eine sichtbare Meldung, wodurch ein fehlgeschlagener Upload
+            // (z.B. abgelehnter Dateityp) stumm wirkt.
+            const message = (error && error.message) ? error.message : 'Upload failed';
+            if (typeof this.uppy.info === 'function') {
+                this.uppy.info(message, 'error', 5000);
+            }
             throw error;
         }
     }
@@ -318,9 +325,19 @@ export class ChunkUploader {
         });
         
         if (!response.ok) {
+            // Server liefert bei Fehlern JSON mit { error: "..." } (siehe UppyUploadHandler::handle).
+            // Diese konkrete Meldung (z.B. abgelehnter Dateityp aus dem Mediapool) durchreichen,
+            // statt sie zu verwerfen und nur den Statuscode zu zeigen.
             const text = await response.text();
             console.error('Finalize failed:', text);
-            throw new Error('Finalize failed: ' + response.status);
+            let serverMessage = '';
+            try {
+                const parsed = JSON.parse(text);
+                serverMessage = parsed.error || parsed.message || '';
+            } catch (e) {
+                serverMessage = text;
+            }
+            throw new Error(serverMessage !== '' ? serverMessage : ('Finalize failed: ' + response.status));
         }
         
         const data = await response.json();
